@@ -1,6 +1,6 @@
 {
-  "llm_provider": "openai",
-  "model_name": "gpt-4o-mini",
+  "llm_provider": "gemini",
+  "model_name": "gemini-2.5-flash",
   "churn_score_threshold": 10,
   "max_sms_limit": 2,
   "max_discount_limit": 2,
