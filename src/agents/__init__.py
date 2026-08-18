@@ -15,8 +15,8 @@ def load_config():
             return json.load(f)
     except Exception:
         return {
-            "llm_provider": "openai",
-            "model_name": "gpt-4o-mini",
+            "llm_provider": "gemini",
+            "model_name": "gemini-2.5-flash",
             "churn_score_threshold": 10,
             "max_sms_limit": 2,
             "max_discount_limit": 2,
@@ -27,18 +27,18 @@ def load_config():
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-def get_llm(provider="openai"):
-    if provider == "gemini":
-        return ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
-            temperature=0.2,
-            google_api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY") # fallback for mocked testing
-        )
-    else:
+def get_llm(provider="gemini"):
+    if provider == "openai":
         return ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0.2,
             api_key=os.getenv("OPENAI_API_KEY")
+        )
+    else:
+        return ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.2,
+            google_api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY") # fallback for mocked testing
         )
 
 # 1. BEHAVIOR ANALYSIS AGENT (Deterministic Logic)
@@ -70,7 +70,7 @@ ACTIONS = [
     "DO_NOTHING"
 ]
 
-def decision_agent(customer, memory, llm_provider="openai"):
+def decision_agent(customer, memory, llm_provider="gemini"):
     """
     Strategic Decision Agent with A/B testing:
     - Group A: Coordinates a Google ADK-inspired Subagent Mesh
