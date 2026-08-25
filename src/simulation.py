@@ -4,7 +4,7 @@ import streamlit as st
 from src.agents import behavior_analysis_agent, decision_agent, load_config
 from data.products import products
 
-def run_simulation_step(customer, memory, llm_provider="openai"):
+def run_simulation_step(customer, memory, llm_provider="gemini"):
     # STEP 1: OBSERVE
     analysis = behavior_analysis_agent(customer)
 
