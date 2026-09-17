@@ -31,8 +31,7 @@
       "not_interested_count": 0,
       "status": "Active",
       "history": [
-        "Account Created",
-        "Login"
+        "Account Created"
       ],
       "discount_count": 0,
       "segment": "Price-Sensitive",
@@ -53,7 +52,7 @@
       },
       "last_action": null,
       "action_history": [],
-      "time_since_last_event": 6,
+      "time_since_last_event": 5,
       "not_interested_count": 0,
       "status": "Active",
       "history": [
@@ -79,7 +78,7 @@
       },
       "last_action": null,
       "action_history": [],
-      "time_since_last_event": 11,
+      "time_since_last_event": 10,
       "not_interested_count": 0,
       "status": "Active",
       "history": [
@@ -105,7 +104,7 @@
       },
       "last_action": null,
       "action_history": [],
-      "time_since_last_event": 2,
+      "time_since_last_event": 1,
       "not_interested_count": 0,
       "status": "Active",
       "history": [
@@ -122,35 +121,30 @@
       "id": "C005",
       "name": "Bargain Betty",
       "persona": "Only engages when a discount is active, very low brand loyalty.",
-      "engagement_score": 26,
+      "engagement_score": 30,
       "lifecycle_stage": "Churn Risk",
       "sensitivity": {
         "discount": 0.99,
         "content": 0.05
       },
-      "last_action": "DO_NOTHING",
-      "action_history": [
-        "DO_NOTHING"
-      ],
-      "time_since_last_event": 1,
+      "last_action": null,
+      "action_history": [],
+      "time_since_last_event": 15,
       "not_interested_count": 0,
       "status": "Active",
       "history": [
-        "Coupon Used",
-        "Feature Use",
-        "No Action Taken: System allowed customer to churn naturally"
+        "Coupon Used"
       ],
       "discount_count": 0,
       "segment": "Price-Sensitive",
       "product_id": "P001",
       "sms_count": 0,
       "test_group": "Group B (Standard Rules)",
-      "clv": 57.48,
-      "messages": []
+      "clv": 29.0
     }
   ],
   "memory_registry": {},
   "story_log": [],
-  "llm_provider": "openai",
+  "llm_provider": "gemini",
   "pending_approvals": []
 }
