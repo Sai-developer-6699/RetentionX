@@ -4,13 +4,14 @@ import './App.css';
 function App() {
   const [state, setState] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-  const [viewMode, setViewMode] = useState('desktop'); // 'desktop' or 'mobile'
+  const [viewMode, setViewMode] = useState('desktop'); // 'desktop', 'mobile', or 'reaction_studio'
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [activeTab, setActiveTab] = useState('billing'); // 'billing', 'email', 'sms', 'push'
   const [loading, setLoading] = useState(true);
   const [pollError, setPollError] = useState(false);
+  const [customerActionNote, setCustomerActionNote] = useState('');
 
-  // Poll state.json from Streamlit public folder
+  // Poll state.json from Streamlit export
   useEffect(() => {
     const fetchState = () => {
       fetch('/state.json')
@@ -23,7 +24,6 @@ function App() {
           setLoading(false);
           setPollError(false);
           
-          // Keep current logged-in user updated with latest data
           if (currentUser) {
             const updatedUser = data.customers.find((c) => c.id === currentUser.id);
             if (updatedUser) {
@@ -32,141 +32,134 @@ function App() {
           }
         })
         .catch((err) => {
-          console.warn('Waiting for simulation to start...', err);
           setPollError(true);
           setLoading(false);
         });
     };
 
     fetchState();
-    const interval = setInterval(fetchState, 2000); // Poll every 2s
+    const interval = setInterval(fetchState, 2000);
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  // Handle local response actions for In-App checkins
-  const [showInAppModal, setShowInAppModal] = useState(true);
-  const [inAppSubmitted, setInAppSubmitted] = useState(false);
-
-  // Fallback initial customers if state.json is not ready
+  // Fallback initial personas
   const defaultCustomers = [
-    { id: "C001", name: "Student Sam", persona: "Price-sensitive student", product_id: "P001", status: "Active", engagement_score: 85, test_group: "Group A (AI-driven CLM)", clv: 29.0 },
-    { id: "C002", name: "Corporate Clara", persona: "Busy technical manager", product_id: "P002", status: "Active", engagement_score: 40, test_group: "Group A (AI-driven CLM)", clv: 99.0 },
-    { id: "C003", name: "Ghosting Greg", persona: "Inactive developer", product_id: "P003", status: "Active", engagement_score: 25, test_group: "Group A (AI-driven CLM)", clv: 15.0 },
-    { id: "C004", name: "Scale-up Sarah", persona: "SaaS founder hitting limits", product_id: "P001", status: "Active", engagement_score: 90, test_group: "Group B (Standard Rules)", clv: 29.0 },
-    { id: "C005", name: "Bargain Betty", persona: "Deal hunting buyer", product_id: "P001", status: "Active", engagement_score: 30, test_group: "Group B (Standard Rules)", clv: 29.0 }
+    { id: "C001", name: "Student Sam", persona: "Price-sensitive student with exam drop-offs", product_id: "P001", status: "Active", engagement_score: 85, segment: "Price-Sensitive", clv: 29.0 },
+    { id: "C002", name: "Corporate Clara", persona: "Busy technical manager requiring API value", product_id: "P002", status: "Active", engagement_score: 40, segment: "High-Value", clv: 99.0 },
+    { id: "C003", name: "Ghosting Greg", persona: "Silent developer with high churn probability", product_id: "P003", status: "Active", engagement_score: 25, segment: "Churn-Risk", clv: 15.0 },
+    { id: "C004", name: "Scale-up Sarah", persona: "SaaS founder hitting webhook and usage limits", product_id: "P001", status: "Active", engagement_score: 90, segment: "Upsell Candidate", clv: 29.0 },
+    { id: "C005", name: "Bargain Betty", persona: "Deal hunter only reactive to heavy promotions", product_id: "P001", status: "Active", engagement_score: 30, segment: "Price-Sensitive", clv: 29.0 }
   ];
+
+  const productCatalog = {
+    "P001": { name: "Pro Subscription", base_price: 29.0, desc: "Unlimited workspaces, standard API rate limits" },
+    "P002": { name: "Enterprise Plan", base_price: 99.0, desc: "SAML SSO, 24/7 dedicated support, SLA compliance" },
+    "P003": { name: "API Add-on", base_price: 15.0, desc: "High-throughput API usage keys and priority queue" },
+    "P004": { name: "Pro + API Bundle", base_price: 39.0, desc: "Combined Pro tier and high-throughput query bundle" }
+  };
 
   const customersList = state ? state.customers : defaultCustomers;
 
-  const productCatalog = {
-    "P001": { name: "Pro Subscription", base_price: 29.0, desc: "Unlimited projects, standard API access" },
-    "P002": { name: "Enterprise Plan", base_price: 99.0, desc: "SSO, 24/7 dedicated support, SLA compliance" },
-    "P003": { name: "API Add-on", base_price: 15.0, desc: "High-throughput API usage keys" },
-    "P004": { name: "Pro + API Bundle", base_price: 39.0, desc: "Combined Pro plan and high-throughput API Add-on for power users" }
-  };
-
   const handleLogin = (user) => {
     setCurrentUser(user);
-    // Reset view specific states
     setSelectedEmail(null);
-    setShowInAppModal(true);
-    setInAppSubmitted(false);
     setActiveTab('billing');
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setCustomerActionNote('');
   };
 
-  // Filter messages for logged in user
+  // Filter messages for logged-in user
   const userMessages = currentUser && currentUser.messages ? currentUser.messages : [];
   const emails = userMessages.filter(m => m.channel === 'Email');
   const sms = userMessages.filter(m => m.channel === 'SMS');
   const push = userMessages.filter(m => m.channel === 'Push');
-  
-  // Check if there is an active in-app notification sent today (where day matches current simulation day)
-  const latestInApp = userMessages
-    .filter(m => m.channel === 'In-App')
-    .slice(-1)[0];
 
-  // Price calculations
-  const productKey = currentUser ? currentUser.product_id : 'P001';
-  const currentProduct = productCatalog[productKey];
-  const basePrice = state ? state.price_history[currentProduct.name].slice(-1)[0] : currentProduct.base_price;
-  
-  // Calculate if last action was a successful discount
+  const productKey = currentUser ? (currentUser.product_id || 'P001') : 'P001';
+  const currentProduct = productCatalog[productKey] || productCatalog['P001'];
+  const basePrice = state && state.price_history && state.price_history[currentProduct.name]
+    ? state.price_history[currentProduct.name].slice(-1)[0]
+    : currentProduct.base_price;
+
   const hasActiveDiscount = currentUser && 
-    (currentUser.last_action === 'SEND_SMS_DISCOUNT' || currentUser.last_action === 'SEND_EMAIL_DISCOUNT') && 
-    currentUser.messages.slice(-1)[0]?.reaction.includes('Accepted');
-  
+    (currentUser.last_action === 'SEND_SMS_DISCOUNT' || currentUser.last_action === 'SEND_EMAIL_DISCOUNT');
   const discountRate = hasActiveDiscount ? 0.3 : 0.0;
   const finalPrice = (basePrice * (1 - discountRate)).toFixed(2);
 
   if (loading) {
     return (
-      <div className="center-wrapper">
-        <div className="spinner"></div>
-        <p>Loading Customer workspace...</p>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '1rem' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(99,102,241,0.2)', borderLeftColor: '#6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+        <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Initializing Client Workspace...</p>
       </div>
     );
   }
 
-  // LOGIN SCREEN
+  // ─────────────────────────────────────────────
+  // 1. PERSONA LOGIN SCREEN (BENTO GRID)
+  // ─────────────────────────────────────────────
   if (!currentUser) {
     return (
-      <div className="login-container">
-        <div className="login-card">
-          <div className="login-header">
-            <span className="login-logo">⚡ RetentionX Client Portal</span>
-            <h1>Access Your Subscription Workspace</h1>
-            <p>Select a simulated customer persona to log in, view private communications (SMS, emails, push notices), check current invoice details, and interact with the background retention loop.</p>
+      <div className="login-wrapper">
+        <div className="login-card-container">
+          <div className="login-header-section">
+            <span className="brand-badge">⚡ RetentionX Client Portal</span>
+            <h1>Customer Perspective Workspace</h1>
+            <p>Select any simulated customer persona to view their private inbox, inspect personalized pricing discounts offered by the autonomous agent, and test interactive responses.</p>
           </div>
 
           {pollError && (
-            <div className="warning-banner">
-              ⚠️ <strong>Backend Offline:</strong> Run Streamlit (`streamlit run app.py`) and simulate Day 1 to initialize the live OODA feed. Showing offline mockup.
+            <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#fcd34d', padding: '0.8rem 1.2rem', borderRadius: '12px', marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'center' }}>
+              💡 <strong>Streamlit Offline / Idle:</strong> Run <code>python -m streamlit run app.py</code> in the root terminal to enable live two-way agent synchronization. Showing cached state.
             </div>
           )}
 
-          <div className="user-grid">
+          <div className="bento-user-grid">
             {customersList.map((user) => {
-              const prod = productCatalog[user.product_id];
+              const prod = productCatalog[user.product_id || 'P001'] || productCatalog['P001'];
               const isChurned = user.status === 'Churned';
+              const score = user.engagement_score || 0;
+              const healthColor = score < 30 ? '#f43f5e' : score < 70 ? '#f59e0b' : '#10b981';
+
               return (
                 <div 
                   key={user.id} 
-                  className={`user-login-card ${isChurned ? 'card-churned' : ''}`}
+                  className={`user-bento-card ${isChurned ? 'churned' : ''}`}
                   onClick={() => !isChurned && handleLogin(user)}
                 >
-                  <div className="user-avatar">
-                    {user.name.split(' ').map(n => n[0]).join('')}
+                  <div className="card-top-row">
+                    <div className="avatar-sphere">
+                      {user.name.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <span className="tag-pill">{user.segment || 'Customer'}</span>
                   </div>
+
                   <h3>{user.name}</h3>
-                  <span className="user-meta">{user.persona}</span>
-                  <div className="user-plan-badge">{prod.name}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#c084fc', fontWeight: 600, marginBottom: '0.6rem' }}>
-                    {user.test_group || 'Group A (AI-driven CLM)'}
+                  <div className="user-bento-persona">{user.persona}</div>
+
+                  <div className="bento-metrics-row">
+                    <span style={{ color: '#94a3b8' }}>Engagement</span>
+                    <strong style={{ color: healthColor }}>{score}/100</strong>
                   </div>
-                  
-                  <div className="health-row">
-                    <span className="health-label">Engagement Score</span>
-                    <span className="health-value">{user.engagement_score}/100</span>
+                  <div className="bento-health-bar">
+                    <div className="bento-health-fill" style={{ width: `${score}%`, backgroundColor: healthColor }}></div>
                   </div>
-                  <div className="health-row" style={{ marginTop: '0.2rem', marginBottom: '0.4rem' }}>
-                    <span className="health-label">Simulated CLV</span>
-                    <span className="health-value" style={{ color: '#34d399', fontWeight: '700' }}>${(user.clv || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="health-bar-container">
-                    <div 
-                      className={`health-bar ${user.engagement_score < 30 ? 'low' : user.engagement_score < 70 ? 'med' : 'high'}`}
-                      style={{ width: `${user.engagement_score}%` }}
-                    ></div>
+
+                  <div className="bento-metrics-row" style={{ marginBottom: '1rem' }}>
+                    <span style={{ color: '#94a3b8' }}>Plan</span>
+                    <strong style={{ color: '#cbd5e1' }}>{prod.name}</strong>
                   </div>
 
                   {isChurned ? (
-                    <div className="churned-banner">💀 CHURNED (Unsubscribed)</div>
+                    <div style={{ textAlign: 'center', fontSize: '0.75rem', color: '#f43f5e', fontWeight: 700, padding: '0.4rem' }}>
+                      💀 CHURNED (Unsubscribed)
+                    </div>
                   ) : (
-                    <button className="login-btn">Log In</button>
+                    <button className="bento-login-btn">
+                      Log In as {user.name.split(' ')[0]} →
+                    </button>
                   )}
                 </div>
               );
@@ -177,205 +170,223 @@ function App() {
     );
   }
 
-  // MAIN CLIENT WORKSPACE
+  // ─────────────────────────────────────────────
+  // 2. MAIN WORKSPACE VIEW
+  // ─────────────────────────────────────────────
   return (
-    <div className="workspace-container">
+    <div className="workspace-wrapper">
       {/* Top Navbar */}
-      <header className="workspace-header">
-        <div className="header-left">
-          <span className="header-logo">⚡ ClientWorkspace</span>
-          <span className="user-badge">👤 {currentUser.name} ({currentUser.segment})</span>
+      <header className="portal-navbar">
+        <div className="nav-brand-group">
+          <span className="nav-logo">⚡ RetentionX Client Portal</span>
+          <div className="live-badge">
+            <span className="pulse-dot"></span>
+            <span>Live Loop Connected</span>
+          </div>
         </div>
-        <div className="header-right">
-          {/* Toggle View Mode */}
-          <div className="view-mode-toggle">
+
+        <div className="nav-user-actions">
+          <div className="view-switcher">
             <button 
-              className={viewMode === 'desktop' ? 'active' : ''} 
+              className={`view-switcher-btn ${viewMode === 'desktop' ? 'active' : ''}`}
               onClick={() => setViewMode('desktop')}
             >
-              💻 Desktop View
+              💻 Desktop
             </button>
             <button 
-              className={viewMode === 'mobile' ? 'active' : ''} 
+              className={`view-switcher-btn ${viewMode === 'mobile' ? 'active' : ''}`}
               onClick={() => setViewMode('mobile')}
             >
-              📱 Mobile View
+              📱 Mobile
+            </button>
+            <button 
+              className={`view-switcher-btn ${viewMode === 'reaction_studio' ? 'active' : ''}`}
+              onClick={() => setViewMode('reaction_studio')}
+            >
+              ⚡ Action Studio
             </button>
           </div>
-          <button className="logout-btn" onClick={handleLogout}>Log Out</button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: 600 }}>
+              {currentUser.name}
+            </span>
+            <button className="logout-outline-btn" onClick={handleLogout}>Switch User</button>
+          </div>
         </div>
       </header>
 
-      {state && (
-        <div className="day-ticker">
-          Simulation Day: <strong>{state.day_count}</strong> | Global Subscription Status: <strong className="green">Active</strong>
-        </div>
-      )}
-
-      {/* DESKTOP WEB PORTAL */}
+      {/* Main Container */}
       {viewMode === 'desktop' && (
-        <div className="desktop-layout">
-          {/* Left Navigation Tabs */}
-          <aside className="desktop-sidebar">
-            <nav className="desktop-nav">
+        <div className="portal-main-layout">
+          {/* Left Navigation */}
+          <aside className="portal-sidebar">
+            <nav className="portal-nav-stack">
               <button 
-                className={activeTab === 'billing' ? 'nav-item active' : 'nav-item'} 
+                className={`nav-tab-button ${activeTab === 'billing' ? 'active' : ''}`}
                 onClick={() => setActiveTab('billing')}
               >
-                💳 Subscription & Invoices
+                <span>💳 Plan & Invoices</span>
               </button>
               <button 
-                className={activeTab === 'email' ? 'nav-item active' : 'nav-item'} 
+                className={`nav-tab-button ${activeTab === 'email' ? 'active' : ''}`}
                 onClick={() => setActiveTab('email')}
               >
-                ✉️ Email Inbox <span className="count">{emails.length}</span>
+                <span>✉️ Mailbox</span>
+                {emails.length > 0 && <span className="nav-pill-count">{emails.length}</span>}
               </button>
               <button 
-                className={activeTab === 'sms' ? 'nav-item active' : 'nav-item'} 
+                className={`nav-tab-button ${activeTab === 'sms' ? 'active' : ''}`}
                 onClick={() => setActiveTab('sms')}
               >
-                💬 SMS Log <span className="count">{sms.length}</span>
+                <span>💬 SMS Transcripts</span>
+                {sms.length > 0 && <span className="nav-pill-count">{sms.length}</span>}
               </button>
               <button 
-                className={activeTab === 'push' ? 'nav-item active' : 'nav-item'} 
+                className={`nav-tab-button ${activeTab === 'push' ? 'active' : ''}`}
                 onClick={() => setActiveTab('push')}
               >
-                🔔 Push Notifications <span className="count">{push.length}</span>
+                <span>🔔 Push Notices</span>
+                {push.length > 0 && <span className="nav-pill-count">{push.length}</span>}
               </button>
             </nav>
 
-            <div className="sidebar-footer">
-              <h4>System Vibe Check</h4>
-              <p>Engagement rating holds at <strong>{currentUser.engagement_score}/100</strong>.</p>
-              <div className="small-health-bar" style={{ marginBottom: '0.6rem' }}>
-                <div style={{ width: `${currentUser.engagement_score}%` }}></div>
+            <div className="user-status-card">
+              <h4>Telemetry Snapshot</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.4rem' }}>
+                <span style={{ color: '#94a3b8' }}>Health Score</span>
+                <strong>{currentUser.engagement_score}/100</strong>
               </div>
-              <div style={{ fontSize: '0.7rem', color: '#c084fc', fontWeight: 700 }}>
-                {currentUser.test_group || 'Group A (AI-driven CLM)'}
+              <div className="bento-health-bar" style={{ marginBottom: '0.8rem' }}>
+                <div 
+                  className="bento-health-fill" 
+                  style={{ 
+                    width: `${currentUser.engagement_score}%`, 
+                    backgroundColor: currentUser.engagement_score < 30 ? '#f43f5e' : currentUser.engagement_score < 70 ? '#f59e0b' : '#10b981' 
+                  }}
+                ></div>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', lineHeight: 1.5 }}>
+                <div>⏱️ <strong>Inactivity:</strong> {currentUser.time_since_last_event || 0} days</div>
+                <div>🏷️ <strong>Segment:</strong> {currentUser.segment}</div>
+                <div>💵 <strong>Estimated CLV:</strong> ${(currentUser.clv || 0).toFixed(2)}</div>
               </div>
             </div>
           </aside>
 
-          {/* Right Content Pane */}
-          <main className="desktop-content">
-            
-            {/* BILLING PORTAL */}
+          {/* Right Content */}
+          <main className="portal-content-body">
+            {/* BILLING TAB */}
             {activeTab === 'billing' && (
-              <div className="tab-pane">
-                <h2>Subscription Billing Center</h2>
-                {state && state.llm_provider && (
-                  <div className="model-badge-info" style={{ background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.8rem', borderRadius: '8px', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '1.2rem', display: 'inline-block', border: '1px solid var(--border-color)' }}>
-                    🤖 Campaigns Orchestrated by: <strong style={{ color: 'white', textTransform: 'capitalize' }}>{state.llm_provider}</strong> Agent Model
-                  </div>
-                )}
-                <p className="subtitle">Manage tier plans, check billing details, and verify active promotions.</p>
-                
-                <div className="billing-grid">
-                  <div className="billing-card main-plan">
-                    <span className="plan-label">CURRENT PLAN</span>
-                    <h3>{currentProduct.name}</h3>
-                    <p className="plan-desc">{currentProduct.desc}</p>
-                    
-                    <div className="price-box">
-                      <span className="price-value">${finalPrice}</span>
-                      <span className="price-period">/ month</span>
+              <div>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '0.4rem', color: '#fff' }}>Subscription Workspace</h2>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Review current tier rates, personalized retention discounts, and billing status.</p>
+
+                <div className="billing-hero-grid">
+                  <div className="plan-spotlight-card">
+                    {hasActiveDiscount && (
+                      <div className="discount-ribbon">
+                        ⚡ 30% Promo Activated by Autonomous Agent
+                      </div>
+                    )}
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Active Subscription</span>
+                    <h3 style={{ fontSize: '1.8rem', color: '#fff', margin: '0.4rem 0' }}>{currentProduct.name}</h3>
+                    <p style={{ color: '#cbd5e1', fontSize: '0.88rem' }}>{currentProduct.desc}</p>
+
+                    <div className="big-price-display">
+                      <span className="price-main">${finalPrice}</span>
+                      {hasActiveDiscount && <span className="price-old">${basePrice.toFixed(2)}</span>}
+                      <span className="price-sub">/ month</span>
                     </div>
 
-                    {hasActiveDiscount && (
-                      <div className="discount-applied-pill">
-                        🎁 30% SMS/Email Retention Discount Applied
+                    <button 
+                      className="glow-btn"
+                      onClick={() => setCustomerActionNote(`Renewed ${currentProduct.name} at $${finalPrice}/mo.`)}
+                    >
+                      {hasActiveDiscount ? 'Claim 30% Promo & Renew' : 'Renew Subscription'}
+                    </button>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: '1.75rem' }}>
+                    <h3 style={{ fontSize: '1.1rem', color: '#fff', marginBottom: '1rem' }}>Pricing Breakdown</h3>
+                    <div className="breakdown-row">
+                      <span style={{ color: '#94a3b8' }}>Standard Base Price</span>
+                      <span>${basePrice.toFixed(2)}</span>
+                    </div>
+                    <div className="breakdown-row">
+                      <span style={{ color: '#94a3b8' }}>Agent Retention Promo</span>
+                      <span style={{ color: hasActiveDiscount ? '#10b981' : '#94a3b8' }}>
+                        {hasActiveDiscount ? '- 30% ($' + (basePrice * 0.3).toFixed(2) + ')' : '$0.00'}
+                      </span>
+                    </div>
+                    <div className="breakdown-row total-row">
+                      <span>Total Invoice</span>
+                      <span style={{ color: '#38bdf8' }}>${finalPrice}/mo</span>
+                    </div>
+
+                    {customerActionNote && (
+                      <div style={{ marginTop: '1rem', padding: '0.6rem 0.8rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', color: '#6ee7b7', fontSize: '0.8rem' }}>
+                        ✓ {customerActionNote}
                       </div>
                     )}
                   </div>
-
-                  <div className="billing-card payment-history">
-                    <h3>Billing Details</h3>
-                    <div className="billing-row">
-                      <span>Standard Base Price</span>
-                      <span>${basePrice.toFixed(2)}/mo</span>
-                    </div>
-                    <div className="billing-row">
-                      <span>Retention Discount</span>
-                      <span>-{hasActiveDiscount ? '30%' : '$0.00'}</span>
-                    </div>
-                    <hr className="divider" />
-                    <div className="billing-row total">
-                      <span>Monthly Charge</span>
-                      <span>${finalPrice}/mo</span>
-                    </div>
-                    <div className="billing-row" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)' }}>
-                      <span>Lifetime Value (CLV)</span>
-                      <span style={{ color: '#34d399', fontWeight: 'bold' }}>${(currentUser.clv || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="included-features">
-                  <h3>Included Sub-Features</h3>
-                  <ul>
-                    {currentProduct.desc.split(',').map((f, i) => (
-                      <li key={i}>✓ {f.trim()}</li>
-                    ))}
-                    <li>✓ High speed webhook integrations</li>
-                    <li>✓ Custom SSL setups</li>
-                  </ul>
                 </div>
               </div>
             )}
 
-            {/* EMAIL CLIENT */}
+            {/* EMAIL TAB */}
             {activeTab === 'email' && (
-              <div className="tab-pane email-client">
-                <h2>Mailbox Workspace</h2>
+              <div>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '0.4rem', color: '#fff' }}>Mailbox Client</h2>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Inspect retention emails dispatched by the agent.</p>
+
                 {emails.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon">✉️</div>
-                    <p>Your inbox is empty. Retention outreach emails will appear here when the agent decides to contact you.</p>
+                  <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                    ✉️ No emails delivered yet. When the agent schedules an email campaign, it will arrive here.
                   </div>
                 ) : (
-                  <div className="email-workspace">
-                    <div className="email-list">
-                      {emails.map((e, index) => (
+                  <div className="inbox-split-view">
+                    <div className="inbox-list-pane">
+                      {emails.map((e, idx) => (
                         <div 
-                          key={index} 
-                          className={`email-item ${selectedEmail === e ? 'active' : ''}`}
+                          key={idx} 
+                          className={`email-row-item ${selectedEmail === e ? 'active' : ''}`}
                           onClick={() => setSelectedEmail(e)}
                         >
-                          <div className="email-subject-line">
-                            <strong>{e.content.split('\n')[0].replace('Subject: ', '')}</strong>
+                          <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', marginBottom: '0.2rem' }}>
+                            {e.content.split('\n')[0].replace('Subject: ', '')}
                           </div>
-                          <div className="email-preview">
-                            {e.content.split('\n').slice(2).join(' ').substring(0, 80)}...
+                          <div style={{ color: '#94a3b8', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {e.content.split('\n').slice(2).join(' ')}
                           </div>
-                          <span className="email-day">Day {e.day}</span>
+                          <div style={{ fontSize: '0.7rem', color: '#6366f1', marginTop: '0.4rem', fontWeight: 600 }}>
+                            Delivered Day {e.day}
+                          </div>
                         </div>
                       ))}
                     </div>
-                    <div className="email-body">
+
+                    <div className="inbox-reader-pane">
                       {selectedEmail ? (
-                        <div className="email-viewer">
-                          <div className="email-header-info">
-                            <h3>{selectedEmail.content.split('\n')[0].replace('Subject: ', '')}</h3>
-                            <div className="sender-meta">
-                              <span>From: <strong>RetentionX Operations &lt;ops@retentionx.ai&gt;</strong></span>
-                              <span>Day {selectedEmail.day}</span>
+                        <>
+                          <div className="reader-header">
+                            <h3 style={{ fontSize: '1.25rem', color: '#fff', marginBottom: '0.5rem' }}>
+                              {selectedEmail.content.split('\n')[0].replace('Subject: ', '')}
+                            </h3>
+                            <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                              From: <strong style={{ color: '#e2e8f0' }}>RetentionX AI Team &lt;retention@saas.ai&gt;</strong> • Day {selectedEmail.day}
                             </div>
                           </div>
-                          <div className="email-content-text">
-                            {selectedEmail.content.split('\n').slice(2).map((para, i) => (
-                              <p key={i}>{para}</p>
-                            ))}
+                          <div className="reader-body">
+                            {selectedEmail.content.split('\n').slice(2).join('\n')}
                           </div>
-                          <div className="email-actions-mock">
-                            <button className="reply-btn">Reply to Operations</button>
-                            <span className="reaction-meta">
-                              🤝 <strong>Your Simulated Action:</strong> {selectedEmail.reaction}
-                            </span>
+                          <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '0.82rem', color: '#38bdf8' }}>
+                            🤝 <strong>Simulated Customer Response:</strong> {selectedEmail.reaction} (Impact: +{selectedEmail.impact})
                           </div>
-                        </div>
+                        </>
                       ) : (
-                        <div className="select-email-prompt">
-                          <p>Select an email from the inbox list to read the full outreach content and inspect user reaction logs.</p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
+                          Select an email from the left pane to view its full text.
                         </div>
                       )}
                     </div>
@@ -384,26 +395,24 @@ function App() {
               </div>
             )}
 
-            {/* SMS WORKSPACE */}
+            {/* SMS TAB */}
             {activeTab === 'sms' && (
-              <div className="tab-pane">
-                <h2>Outbound Mobile SMS Transcripts</h2>
-                <p className="subtitle">Review the raw text messages push-delivered to your cellular device.</p>
+              <div>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '0.4rem', color: '#fff' }}>Cellular SMS Logs</h2>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>High-urgency mobile SMS alerts delivered directly to device.</p>
+
                 {sms.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon">💬</div>
-                    <p>No SMS outreach logs recorded. The system uses SMS channels if you are price-sensitive or have dropped off.</p>
+                  <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                    💬 No SMS alerts dispatched yet.
                   </div>
                 ) : (
-                  <div className="sms-list-desktop">
-                    {sms.map((s, index) => (
-                      <div key={index} className="sms-log-bubble">
-                        <div className="sms-log-time">Day {s.day} via Mobile Carrier</div>
-                        <div className="sms-log-body">
-                          <div className="bubble-text">{s.content}</div>
-                        </div>
-                        <div className="sms-log-footer">
-                          📱 <strong>Simulated Response:</strong> <i>{s.reaction} (Impact: {s.impact} score)</i>
+                  <div className="sms-stream-container">
+                    {sms.map((s, idx) => (
+                      <div key={idx} className="sms-bubble-card">
+                        <div className="bubble-carrier-tag">Cellular SMS • Day {s.day}</div>
+                        <div className="bubble-message-text">{s.content}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#a5b4fc' }}>
+                          📱 <strong>Simulated Reaction:</strong> {s.reaction}
                         </div>
                       </div>
                     ))}
@@ -412,31 +421,26 @@ function App() {
               </div>
             )}
 
-            {/* PUSH NOTIFICATIONS */}
+            {/* PUSH TAB */}
             {activeTab === 'push' && (
-              <div className="tab-pane">
-                <h2>Mobile App Push Notifications</h2>
-                <p className="subtitle">Alert notifications pushed to user lockscren dashboard.</p>
+              <div>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '0.4rem', color: '#fff' }}>Push Notification Trays</h2>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>In-app and mobile lockscreen notifications.</p>
+
                 {push.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon">🔔</div>
-                    <p>No push notification logs recorded.</p>
+                  <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                    🔔 No push notifications dispatched yet.
                   </div>
                 ) : (
-                  <div className="push-notifications-list">
-                    {push.map((p, index) => (
-                      <div key={index} className="push-notification-card">
-                        <div className="push-header">
-                          <span className="push-app-icon">⚡</span>
-                          <span className="push-app-title">Workspace Client</span>
-                          <span className="push-time">Day {p.day}</span>
+                  <div style={{ display: 'grid', gap: '1rem', maxWidth: '680px' }}>
+                    {push.map((p, idx) => (
+                      <div key={idx} className="glass-panel" style={{ padding: '1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#f59e0b', fontWeight: 700, marginBottom: '0.4rem' }}>
+                          <span>🔔 SYSTEM NOTIFICATION</span>
+                          <span>Day {p.day}</span>
                         </div>
-                        <div className="push-content">
-                          {p.content}
-                        </div>
-                        <div className="push-action-log">
-                          👉 <strong>Reaction:</strong> {p.reaction} ({p.impact >= 0 ? '+' : ''}{p.impact} engagement)
-                        </div>
+                        <div style={{ fontSize: '0.95rem', color: '#fff', marginBottom: '0.5rem' }}>{p.content}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Outcome: {p.reaction}</div>
                       </div>
                     ))}
                   </div>
@@ -444,127 +448,79 @@ function App() {
               </div>
             )}
           </main>
-
-          {/* FLOATING IN-APP MODAL IF AGENT TRIGGERED IT TODAY */}
-          {latestInApp && showInAppModal && (
-            <div className="floating-inapp-popup">
-              <div className="inapp-card">
-                <div className="inapp-header">
-                  <h4>💡 Account Check-in Alert</h4>
-                  <button className="inapp-close" onClick={() => setShowInAppModal(false)}>×</button>
-                </div>
-                <div className="inapp-body">
-                  <p>{latestInApp.content}</p>
-                  {inAppSubmitted ? (
-                    <div className="inapp-thanks">
-                      ✅ Response sent! Your feedback will train the CLM agent model.
-                    </div>
-                  ) : (
-                    <div className="inapp-actions">
-                      <button 
-                        className="inapp-confirm" 
-                        onClick={() => setInAppSubmitted(true)}
-                      >
-                        Acknowledge & Sync Workspace
-                      </button>
-                      <button 
-                        className="inapp-dismiss" 
-                        onClick={() => setShowInAppModal(false)}
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="inapp-footer">
-                  <small>Agent Learning loop registers: <i>{latestInApp.reaction}</i></small>
-                </div>
-              </div>
-            </div>
-          )}
-
         </div>
       )}
 
-      {/* MOBILE DEVICE MOCKUP VIEW */}
+      {/* MOBILE DEVICE SIMULATOR */}
       {viewMode === 'mobile' && (
-        <div className="mobile-view-wrapper">
-          <div className="phone-bezel">
-            <div className="phone-screen">
-              {/* Top Notch Status */}
-              <div className="phone-status-bar">
-                <span className="phone-time">14:05</span>
-                <div className="phone-notch">
-                  <div className="dynamic-island"></div>
-                </div>
-                <div className="phone-icons">📶 🛜 🔋</div>
+        <div className="mobile-simulator-stage">
+          <div className="phone-hardware">
+            <div className="island-notch"></div>
+            <div className="phone-screen-content">
+              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: '#94a3b8' }}>
+                Simulator: {currentUser.name}
               </div>
 
-              {/* Lockscreen Alerts Overview */}
-              <div className="phone-body-content">
-                <div className="phone-app-grid">
-                  <div className="phone-app-icon-wrapper" onClick={() => setActiveTab('sms')}>
-                    <span className="app-icon message-icon">💬</span>
-                    <span className="app-name">Messages</span>
-                    {sms.length > 0 && <span className="app-badge">{sms.length}</span>}
+              {userMessages.length > 0 ? (
+                userMessages.map((m, idx) => (
+                  <div key={idx} className="lockscreen-notif">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#93c5fd', fontWeight: 700, marginBottom: '0.3rem' }}>
+                      <span>{m.channel === 'SMS' ? '💬 Messages' : m.channel === 'Email' ? '✉️ Mail' : '🔔 Alert'}</span>
+                      <span>Day {m.day}</span>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', lineHeight: 1.4 }}>
+                      {m.channel === 'Email' ? m.content.split('\n')[0] : m.content}
+                    </div>
                   </div>
-                  <div className="phone-app-icon-wrapper" onClick={() => setActiveTab('email')}>
-                    <span className="app-icon mail-icon">✉️</span>
-                    <span className="app-name">Mail</span>
-                    {emails.length > 0 && <span className="app-badge">{emails.length}</span>}
-                  </div>
-                  <div className="phone-app-icon-wrapper" onClick={() => setActiveTab('billing')}>
-                    <span className="app-icon client-icon">⚡</span>
-                    <span className="app-name">Workspace</span>
-                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: 'center', color: '#64748b', fontSize: '0.8rem', marginTop: '4rem' }}>
+                  No incoming alerts on device.
                 </div>
-
-                {/* Lockscreen banners displaying pushed communications */}
-                {userMessages.length > 0 && (
-                  <div className="phone-notifications-drawer">
-                    <span className="drawer-title">Recent Lockscreen Notifications</span>
-                    {userMessages.slice(-3).map((m, index) => (
-                      <div key={index} className="phone-notification-banner">
-                        <div className="banner-top">
-                          <span className="banner-app">{m.channel === 'SMS' ? '💬 Messages' : m.channel === 'Email' ? '✉️ Mail' : '🔔 System'}</span>
-                          <span className="banner-day">Day {m.day}</span>
-                        </div>
-                        <div className="banner-body">
-                          {m.channel === 'Email' ? m.content.split('\n')[0] : m.content}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Active Chat view inside mobile device frame */}
-                <div className="phone-active-app-wrapper">
-                  <div className="phone-app-header">
-                    <h4>💬 SMS Workspace Chat</h4>
-                  </div>
-                  <div className="imessage-container">
-                    {sms.map((s, idx) => (
-                      <div key={idx} className="imessage-bubble-row">
-                        <div className="imessage-bubble inbound">
-                          {s.content}
-                        </div>
-                        <div className="imessage-meta">
-                          Delivered Day {s.day} • Reaction: {s.reaction}
-                        </div>
-                      </div>
-                    ))}
-                    {sms.length === 0 && (
-                      <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.8rem', padding: '1rem' }}>
-                        No text messages received.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Bottom Home Indicator */}
-              <div className="phone-home-indicator"></div>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* INTERACTIVE CUSTOMER ACTION STUDIO */}
+      {viewMode === 'reaction_studio' && (
+        <div style={{ maxWidth: '800px', margin: '2rem auto', padding: '0 1rem' }}>
+          <div className="glass-panel" style={{ padding: '2rem' }}>
+            <h2 style={{ fontSize: '1.6rem', color: '#fff', marginBottom: '0.5rem' }}>⚡ Customer Reaction Studio</h2>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              Simulate manual customer responses to test how the autonomous agent adapts its strategies.
+            </p>
+
+            <div style={{ display: 'grid', gap: '1rem' }}>
+              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
+                <h4 style={{ color: '#fff', marginBottom: '0.4rem' }}>🎟️ Promo Code Acceptance</h4>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.8rem' }}>Customer clicks link and applies promotional code.</p>
+                <button 
+                  className="glow-btn"
+                  onClick={() => setCustomerActionNote('Successfully applied code SAVEMORE30. Renewal price locked at 30% discount.')}
+                >
+                  Accept Discount Offer
+                </button>
+              </div>
+
+              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
+                <h4 style={{ color: '#fff', marginBottom: '0.4rem' }}>🛑 Opt-Out of SMS</h4>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.8rem' }}>User replies STOP to outreach message.</p>
+                <button 
+                  style={{ background: 'rgba(244, 63, 94, 0.2)', border: '1px solid #f43f5e', color: '#f43f5e', padding: '0.55rem 1.2rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                  onClick={() => setCustomerActionNote('Replied STOP: Customer opted out from further SMS notifications.')}
+                >
+                  Reply STOP
+                </button>
+              </div>
+            </div>
+
+            {customerActionNote && (
+              <div style={{ marginTop: '1.5rem', padding: '0.8rem 1rem', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '10px', color: '#c7d2fe' }}>
+                ✓ {customerActionNote}
+              </div>
+            )}
           </div>
         </div>
       )}
